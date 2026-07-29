@@ -1,0 +1,1 @@
+"""Local supervisor-specialist application."""
