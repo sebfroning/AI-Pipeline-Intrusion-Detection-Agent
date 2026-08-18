@@ -24,17 +24,34 @@ def ask_weather_specialist(question: str) -> str:
     return result["messages"][-1].text
 
 
-supervisor = create_agent(
-    model=model,
-    tools=[ask_fruit_specialist, ask_weather_specialist],
-    system_prompt=(
-        "You are a supervisor with a fruit specialist and a harvest-weather "
-        "specialist. Answer unrelated prompts yourself without calling a tool. "
-        "For fruit questions, call ask_fruit_specialist. For requests for a "
-        "harvest weather pattern, call ask_weather_specialist. If both are "
-        "relevant, call both and combine their results. Pass each specialist a "
-        "focused sub-question. Never request more than one tool call in a single "
-        "response, and never call the same specialist more than once per user "
-        "prompt. After any tool calls, give the user the final answer."
-    ),
-)
+def create_supervisor(*, parallel_specialists: bool = False):
+    """Create a supervisor with sequential or parallel specialist dispatch."""
+    if parallel_specialists:
+        dispatch_instructions = (
+            "When both specialists are relevant, request exactly one call to each "
+            "specialist in the same response so they can run in parallel. "
+        )
+    else:
+        dispatch_instructions = (
+            "Never request more than one specialist tool call in a single response. "
+        )
+
+    return create_agent(
+        model=model,
+        tools=[ask_fruit_specialist, ask_weather_specialist],
+        system_prompt=(
+            "You are a supervisor with a fruit specialist and a harvest-weather "
+            "specialist. Answer unrelated prompts yourself without calling a tool. "
+            "For fruit questions, call ask_fruit_specialist. For requests for a "
+            "harvest weather pattern, call ask_weather_specialist. If both are "
+            "relevant, call both and combine their results. Pass each specialist a "
+            "focused sub-question. "
+            + dispatch_instructions
+            + "Never call the same specialist more than once per user "
+            "prompt. After any tool calls, give the user the final answer."
+        ),
+    )
+
+
+# Preserve the original import for callers that want sequential execution.
+supervisor = create_supervisor()

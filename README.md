@@ -38,6 +38,24 @@ To use another installed Ollama model:
 OLLAMA_MODEL=another-model python -m app "Tell me about pears"
 ```
 
+To allow both specialists to run concurrently when a prompt needs both:
+
+```bash
+python -m app --parallel-specialists \
+  "Tell me about pears and give me a harvest weather pattern"
+```
+
+The flag allows the supervisor to request both specialists in one response and
+sets the LangChain execution concurrency to two. Ollama must also be configured
+to process two requests concurrently; when starting the server manually, use:
+
+```bash
+OLLAMA_NUM_PARALLEL=2 ollama serve
+```
+
+Parallel inference uses more memory and may not improve latency on CPU-only
+systems. Without the flag, specialist execution remains sequential.
+
 ## Try it
 
 ```bash
@@ -47,7 +65,8 @@ python -m app "Give me a harvest weather pattern"
 python -m app "Tell me about pears and give me a harvest weather pattern"
 ```
 
-Specialist selection is model-driven. The prompts tell the supervisor to call at
-most one specialist at a time and each specialist no more than once. The weather
-specialist returns one of `sunny`, `rainy`, or `dry`; because its random-choice
-tool is optional, the model can also choose a label directly.
+Specialist selection is model-driven. By default, the supervisor calls at most
+one specialist at a time; `--parallel-specialists` allows it to call both in one
+response when both are relevant. Each specialist is called no more than once.
+The weather specialist returns one of `sunny`, `rainy`, or `dry`; because its
+random-choice tool is optional, the model can also choose a label directly.
