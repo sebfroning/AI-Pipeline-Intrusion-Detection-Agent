@@ -32,6 +32,46 @@ python -m app "How could dry weather affect an apple harvest?"
 The command prints which specialists were used, followed by the answer. Each run
 is stateless. The supervisor may use neither specialist, one specialist, or both.
 
+## Oversight metadata
+
+Every run includes metadata about the model, agent, or pipeline being overseen.
+It is stored under the typed `oversight` state field and inherited by each
+specialist. The metadata records:
+
+- `target_name` and `target_kind` (`model`, `agent`, or `pipeline`)
+- `access_mode` (`black_box`, `gray_box`, or `white_box`)
+- an optional `description`
+- optional `available_interfaces`, such as an inference API, request logs,
+  activations, weights, or training data
+
+The metadata is also added to every agent's system prompt so agents can select
+tools that match the access they actually have. Configure it from the CLI:
+
+```bash
+python -m app \
+  --target-name "harvest classifier" \
+  --target-kind model \
+  --access-mode white_box \
+  --target-description "Classifies fruit harvest risk" \
+  --available-interface weights \
+  --available-interface activations \
+  "Tell me about apples"
+```
+
+Code that invokes the graph directly must provide the same state shape:
+
+```python
+result = supervisor.invoke({
+    "messages": [{"role": "user", "content": "Inspect this model"}],
+    "oversight": {
+        "target_name": "harvest classifier",
+        "target_kind": "model",
+        "access_mode": "black_box",
+        "available_interfaces": ["inference API"],
+    },
+})
+```
+
 To use another installed Ollama model:
 
 ```bash

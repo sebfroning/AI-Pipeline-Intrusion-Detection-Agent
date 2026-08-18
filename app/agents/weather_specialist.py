@@ -4,6 +4,7 @@ from langchain.agents import create_agent
 from langchain.tools import tool
 
 from app.config import model
+from app.state import OversightState, include_oversight_metadata
 
 
 @tool
@@ -20,4 +21,6 @@ weather_specialist = create_agent(
         "labels and nothing else: sunny, rainy, or dry. You may use the "
         "harvest_weather tool to choose the label."
     ),
+    middleware=[include_oversight_metadata],
+    state_schema=OversightState,
 )

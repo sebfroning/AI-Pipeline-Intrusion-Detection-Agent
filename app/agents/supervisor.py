@@ -1,25 +1,36 @@
 from langchain.agents import create_agent
-from langchain.tools import tool
+from langchain.tools import ToolRuntime, tool
 
 from app.agents.fruit_specialist import fruit_specialist
 from app.agents.weather_specialist import weather_specialist
 from app.config import model
+from app.state import OversightState, include_oversight_metadata
 
 
 @tool
-def ask_fruit_specialist(question: str) -> str:
+def ask_fruit_specialist(
+    question: str, runtime: ToolRuntime[None, OversightState]
+) -> str:
     """Ask the fruit specialist a focused fruit question."""
     result = fruit_specialist.invoke(
-        {"messages": [{"role": "user", "content": question}]}
+        {
+            "messages": [{"role": "user", "content": question}],
+            "oversight": runtime.state["oversight"],
+        }
     )
     return result["messages"][-1].text
 
 
 @tool
-def ask_weather_specialist(question: str) -> str:
+def ask_weather_specialist(
+    question: str, runtime: ToolRuntime[None, OversightState]
+) -> str:
     """Ask the weather specialist for a harvest weather pattern."""
     result = weather_specialist.invoke(
-        {"messages": [{"role": "user", "content": question}]}
+        {
+            "messages": [{"role": "user", "content": question}],
+            "oversight": runtime.state["oversight"],
+        }
     )
     return result["messages"][-1].text
 
@@ -39,6 +50,8 @@ def create_supervisor(*, parallel_specialists: bool = False):
     return create_agent(
         model=model,
         tools=[ask_fruit_specialist, ask_weather_specialist],
+        state_schema=OversightState,
+        middleware=[include_oversight_metadata],
         system_prompt=(
             "You are a supervisor with a fruit specialist and a harvest-weather "
             "specialist. Answer unrelated prompts yourself without calling a tool. "

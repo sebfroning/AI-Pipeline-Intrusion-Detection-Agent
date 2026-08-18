@@ -30,7 +30,15 @@ class CliTests(unittest.TestCase):
 
         create.assert_called_once_with(parallel_specialists=False)
         graph.invoke.assert_called_once_with(
-            {"messages": [{"role": "user", "content": "hello"}]},
+            {
+                "messages": [{"role": "user", "content": "hello"}],
+                "oversight": {
+                    "target_name": "local model",
+                    "target_kind": "model",
+                    "access_mode": "black_box",
+                    "available_interfaces": [],
+                },
+            },
             config={"max_concurrency": 1},
         )
 
@@ -48,8 +56,52 @@ class CliTests(unittest.TestCase):
 
         create.assert_called_once_with(parallel_specialists=True)
         graph.invoke.assert_called_once_with(
-            {"messages": [{"role": "user", "content": "hello"}]},
+            {
+                "messages": [{"role": "user", "content": "hello"}],
+                "oversight": {
+                    "target_name": "local model",
+                    "target_kind": "model",
+                    "access_mode": "black_box",
+                    "available_interfaces": [],
+                },
+            },
             config={"max_concurrency": 2},
+        )
+
+    @patch("app.__main__.create_supervisor")
+    def test_main_stores_cli_oversight_metadata_in_state(self, create: Mock) -> None:
+        graph = create.return_value
+        graph.invoke.return_value = {"messages": [AIMessage(content="done")]}
+
+        argv = [
+            "python -m app",
+            "--target-name",
+            "fraud classifier",
+            "--target-kind",
+            "pipeline",
+            "--access-mode",
+            "white_box",
+            "--target-description",
+            "Screens incoming transactions",
+            "--available-interface",
+            "weights",
+            "--available-interface",
+            "activations",
+            "inspect it",
+        ]
+        with patch.object(sys, "argv", argv), patch("builtins.print"):
+            main()
+
+        state = graph.invoke.call_args.args[0]
+        self.assertEqual(
+            state["oversight"],
+            {
+                "target_name": "fraud classifier",
+                "target_kind": "pipeline",
+                "access_mode": "white_box",
+                "description": "Screens incoming transactions",
+                "available_interfaces": ["weights", "activations"],
+            },
         )
 
 
