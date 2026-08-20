@@ -1,6 +1,7 @@
-"""Shared state carried by the supervisor and every specialist."""
+"""Shared state carried by the supervisor, specialists, and finalizer."""
 
-from typing import Literal, NotRequired, Required, TypedDict, cast
+import operator
+from typing import Annotated, Literal, NotRequired, Required, TypedDict, cast
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import ModelRequest, dynamic_prompt
@@ -8,6 +9,7 @@ from langchain.agents.middleware import ModelRequest, dynamic_prompt
 
 TargetKind = Literal["model", "agent", "pipeline"]
 AccessMode = Literal["black_box", "gray_box", "white_box"]
+SpecialistName = Literal["fruit", "weather"]
 
 
 class OversightMetadata(TypedDict):
@@ -24,10 +26,22 @@ class OversightMetadata(TypedDict):
     available_interfaces: NotRequired[list[str]]
 
 
+class SpecialistResult(TypedDict):
+    """A structured finding produced by one specialist invocation."""
+
+    specialist: Required[SpecialistName]
+    question: Required[str]
+    finding: Required[str]
+
+
 class OversightState(AgentState):
     """Agent state shared across the complete supervisor hierarchy."""
 
     oversight: Required[OversightMetadata]
+    specialist_results: NotRequired[
+        Annotated[list[SpecialistResult], operator.add]
+    ]
+    final_report: NotRequired[str]
 
 
 def format_oversight_metadata(metadata: OversightMetadata) -> str:
