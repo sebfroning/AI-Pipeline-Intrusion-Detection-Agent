@@ -2,7 +2,8 @@
 
 A small, local multi-agent example built with LangChain and Ollama. A supervisor
 answers general questions itself and delegates fruit or harvest-weather questions
-to focused specialist agents when needed.
+to focused specialist agents when needed. A finalizer then produces one report
+from the supervisor synthesis and every structured specialist result.
 
 ## Setup
 
@@ -29,8 +30,23 @@ Pass one prompt to the module:
 python -m app "How could dry weather affect an apple harvest?"
 ```
 
-The command prints which specialists were used, followed by the answer. Each run
-is stateless. The supervisor may use neither specialist, one specialist, or both.
+The command prints which specialists were used, followed by the finalizer's
+report. Each run is stateless. The supervisor may use neither specialist, one
+specialist, or both.
+
+## Workflow
+
+The outer LangGraph has a fixed execution path:
+
+```text
+START -> supervisor agent/tool loop -> finalizer -> END
+```
+
+Specialist tools append typed entries containing the specialist name, focused
+question, and finding to `specialist_results` in graph state. The list uses a
+reducer so results from parallel tool calls are retained. The finalizer always
+runs after a successful supervisor pass, reconciles all collected findings, and
+stores its answer in `final_report` as well as the final message.
 
 ## Oversight metadata
 
