@@ -22,6 +22,33 @@ ollama serve
 ollama pull qwen3:4b
 ```
 
+### Libra GPU nodes
+
+Ollama is not provided as a cluster module. On a GPU node, use the project scripts
+(user-local install, no sudo):
+
+```bash
+srun --partition=gpu --gres=gpu:1 --pty bash
+module load python/3.13.0-gcc-13.1.0-7ypl2
+source .venv/bin/activate
+
+# one-time install (already done if ~/.local/ollama/bin/ollama exists)
+bash scripts/ollama/install.sh
+
+# each GPU session
+source scripts/ollama/env.sh
+bash scripts/ollama/pull-model.sh   # start server + pull qwen3:4b
+python -m app "How could dry weather affect an apple harvest?"
+```
+
+Or run everything in one step:
+
+```bash
+bash scripts/run-gpu.sh "How could dry weather affect an apple harvest?"
+```
+
+Stop the server when finished: `bash scripts/ollama/stop.sh`
+
 ## Run
 
 Pass one prompt to the module:
