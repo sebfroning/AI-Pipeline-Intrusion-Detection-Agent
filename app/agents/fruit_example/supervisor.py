@@ -6,21 +6,18 @@ from langchain.tools import ToolRuntime, tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
-from app.agents.audit_specialist import audit_specialist
-from app.agents.clean_specialist import clean_specialist
-from app.agents.detect_specialist import detect_specialist
+from app.agents.fruit_example.fruit_specialist import fruit_specialist
+from app.agents.fruit_example.weather_specialist import weather_specialist
 from app.config import model
 from app.state import OversightState, SpecialistResult, include_oversight_metadata
 
 
-def _invoke_specialist(
-    specialist,
-    name: str,
-    tool_name: str,
-    question: str,
-    runtime: ToolRuntime[None, OversightState],
+@tool
+def ask_fruit_specialist(
+    question: str, runtime: ToolRuntime[None, OversightState]
 ) -> Command:
-    result = specialist.invoke(
+    """Ask the fruit specialist a focused fruit question."""
+    result = fruit_specialist.invoke(
         {
             "messages": [{"role": "user", "content": question}],
             "oversight": runtime.state["oversight"],
@@ -28,7 +25,7 @@ def _invoke_specialist(
     )
     finding = result["messages"][-1].text
     specialist_result: SpecialistResult = {
-        "specialist": name,
+        "specialist": "fruit",
         "question": question,
         "finding": finding,
     }
@@ -38,7 +35,7 @@ def _invoke_specialist(
                 ToolMessage(
                     content=finding,
                     tool_call_id=runtime.tool_call_id,
-                    name=tool_name,
+                    name="ask_fruit_specialist",
                 )
             ],
             "specialist_results": [specialist_result],
@@ -47,44 +44,33 @@ def _invoke_specialist(
 
 
 @tool
-def invoke_detect_specialist(
+def ask_weather_specialist(
     question: str, runtime: ToolRuntime[None, OversightState]
 ) -> Command:
-    """Invoke the detect specialist to use inference-time detection to find backdoors."""
-    return _invoke_specialist(
-        detect_specialist,
-        "detect",
-        "invoke_detect_specialist",
-        question,
-        runtime,
+    """Ask the weather specialist for a harvest weather pattern."""
+    result = weather_specialist.invoke(
+        {
+            "messages": [{"role": "user", "content": question}],
+            "oversight": runtime.state["oversight"],
+        }
     )
-
-
-@tool
-def invoke_clean_specialist(
-    question: str, runtime: ToolRuntime[None, OversightState]
-) -> Command:
-    """Invoke the clean specialist to clean the potentially backdoored model."""
-    return _invoke_specialist(
-        clean_specialist,
-        "clean",
-        "invoke_clean_specialist",
-        question,
-        runtime,
-    )
-
-
-@tool
-def invoke_audit_specialist(
-    question: str, runtime: ToolRuntime[None, OversightState]
-) -> Command:
-    """Invoke the audit specialist to audit the model's state."""
-    return _invoke_specialist(
-        audit_specialist,
-        "audit",
-        "invoke_audit_specialist",
-        question,
-        runtime,
+    finding = result["messages"][-1].text
+    specialist_result: SpecialistResult = {
+        "specialist": "weather",
+        "question": question,
+        "finding": finding,
+    }
+    return Command(
+        update={
+            "messages": [
+                ToolMessage(
+                    content=finding,
+                    tool_call_id=runtime.tool_call_id,
+                    name="ask_weather_specialist",
+                )
+            ],
+            "specialist_results": [specialist_result],
+        }
     )
 
 
@@ -126,11 +112,11 @@ def finalize_report(state: OversightState) -> dict:
 
 
 def create_supervisor(*, parallel_specialists: bool = False):
-    """Create the supervisor followed by an unconditional finalizer node."""
+    """Create the fruit-example supervisor followed by a finalizer node."""
     if parallel_specialists:
         dispatch_instructions = (
-            "When multiple specialists are relevant, request those tool calls "
-            "in the same response so they can run in parallel. "
+            "When both specialists are relevant, request exactly one call to each "
+            "specialist in the same response so they can run in parallel. "
         )
     else:
         dispatch_instructions = (
@@ -139,21 +125,16 @@ def create_supervisor(*, parallel_specialists: bool = False):
 
     supervisor_agent = create_agent(
         model=model,
-        tools=[
-            invoke_detect_specialist,
-            invoke_clean_specialist,
-            invoke_audit_specialist,
-        ],
+        tools=[ask_fruit_specialist, ask_weather_specialist],
         state_schema=OversightState,
         middleware=[include_oversight_metadata],
         system_prompt=(
-            "You are a supervisor with the task of detecting and cleaning "
-            "backdoors in a pretrained image model. Use the tools available to "
-            "you to detect and clean the backdoors. The available tools are: "
-            "invoke_detect_specialist, invoke_clean_specialist, and "
-            "invoke_audit_specialist. Plan which specialists to invoke and in "
-            "what order to ensure the model is clean and any backdoors are "
-            "removed. Pass each specialist a focused sub-question. "
+            "You are a supervisor with a fruit specialist and a harvest-weather "
+            "specialist. Answer unrelated prompts yourself without calling a tool. "
+            "For fruit questions, call ask_fruit_specialist. For requests for a "
+            "harvest weather pattern, call ask_weather_specialist. If both are "
+            "relevant, call both and combine their results. Pass each specialist a "
+            "focused sub-question. "
             + dispatch_instructions
             + "Never call the same specialist more than once per user "
             "prompt. After any tool calls, provide a concise synthesis for the "
@@ -170,5 +151,4 @@ def create_supervisor(*, parallel_specialists: bool = False):
     return workflow.compile()
 
 
-# Preserve the original import for callers that want sequential execution.
 supervisor = create_supervisor()

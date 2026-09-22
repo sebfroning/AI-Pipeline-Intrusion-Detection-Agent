@@ -8,8 +8,9 @@ from app.state import AccessMode, OversightMetadata, TargetKind
 
 
 SPECIALIST_NAMES = {
-    "ask_fruit_specialist": "fruit",
-    "ask_weather_specialist": "weather",
+    "invoke_detect_specialist": "detect",
+    "invoke_clean_specialist": "clean",
+    "invoke_audit_specialist": "audit",
 }
 
 
