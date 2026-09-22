@@ -1,40 +1,44 @@
 from langchain.agents import create_agent
 from langchain.tools import tool
 
-from app.agents.fruit_specialist import fruit_specialist
-from app.agents.weather_specialist import weather_specialist
+from app.agents.detect_specialist import detect_specialist
+from app.agents.clean_specialist import clean_specialist
+from app.agents.audit_specialist import audit_specialist
 from app.config import model
 
 
 @tool
-def ask_fruit_specialist(question: str) -> str:
-    """Ask the fruit specialist a focused fruit question."""
-    result = fruit_specialist.invoke(
+def invoke_detect_specialist(question: str) -> str:
+    """Invoke the detect specialist to use inference-time detection to find backdoors."""
+    result = detect_specialist.invoke(
         {"messages": [{"role": "user", "content": question}]}
     )
     return result["messages"][-1].text
-
 
 @tool
-def ask_weather_specialist(question: str) -> str:
-    """Ask the weather specialist for a harvest weather pattern."""
-    result = weather_specialist.invoke(
+def invoke_clean_specialist(question: str) -> str:
+    """Invoke the clean specialist to clean the potentially backdoored model."""
+    result = clean_specialist.invoke(
         {"messages": [{"role": "user", "content": question}]}
     )
     return result["messages"][-1].text
 
+@tool
+def invoke_audit_specialist(question: str) -> str:
+    """Invoke the audit specialist to audit the model's state."""
+    result = audit_specialist.invoke(
+        {"messages": [{"role": "user", "content": question}]}
+    )
+    return result["messages"][-1].text
 
 supervisor = create_agent(
     model=model,
-    tools=[ask_fruit_specialist, ask_weather_specialist],
+    tools=[invoke_detect_specialist, invoke_clean_specialist, invoke_audit_specialist],
     system_prompt=(
-        "You are a supervisor with a fruit specialist and a harvest-weather "
-        "specialist. Answer unrelated prompts yourself without calling a tool. "
-        "For fruit questions, call ask_fruit_specialist. For requests for a "
-        "harvest weather pattern, call ask_weather_specialist. If both are "
-        "relevant, call both and combine their results. Pass each specialist a "
-        "focused sub-question. Never request more than one tool call in a single "
-        "response, and never call the same specialist more than once per user "
-        "prompt. After any tool calls, give the user the final answer."
+        "You are a supervisor with the task of detecting and cleaning backdoors in a pretrained image model."
+        "You will be given a prompt and you will need to use the tools available to you to detect and clean the backdoors."
+        "The available tools are: invoke_detect_specialist, invoke_clean_specialist, invoke_audit_specialist."
+        "You must plan which specialists to invoke and in what order to ensure the model is clean and any backdoors are removed."
+        
     ),
 )
