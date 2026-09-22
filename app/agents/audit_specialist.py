@@ -4,6 +4,7 @@ from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from app.config import MITHRIDAT_MCP_SERVERS, model
+from app.state import OversightState, include_oversight_metadata
 
 AUDIT_SYSTEM_PROMPT = (
     "You are the audit toolset specialist. You run backdoor and poisoning detection on image-classification models using run_mmbd, run_strip, run_aeva, and run_freeeagle.\n"
@@ -24,6 +25,8 @@ async def _build_audit_specialist():
         model=model,
         tools=tools,
         system_prompt=AUDIT_SYSTEM_PROMPT,
+        middleware=[include_oversight_metadata],
+        state_schema=OversightState,
     )
 
 
@@ -31,4 +34,19 @@ def _load_audit_specialist():
     return asyncio.run(_build_audit_specialist())
 
 
-audit_specialist = _load_audit_specialist()
+class _LazyAuditSpecialist:
+    """Load the MCP-backed audit agent on first use so imports stay cheap."""
+
+    def __init__(self):
+        self._agent = None
+
+    def _get(self):
+        if self._agent is None:
+            self._agent = _load_audit_specialist()
+        return self._agent
+
+    def invoke(self, *args, **kwargs):
+        return self._get().invoke(*args, **kwargs)
+
+
+audit_specialist = _LazyAuditSpecialist()

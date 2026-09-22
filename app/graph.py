@@ -1,6 +1,5 @@
 from langgraph.graph import StateGraph, START, END
-from app.state import AgentState
-from app.agents.supervisor import supervisor
+from app.state import AgentState, supervisor
 from app.agents.detect_specialist import detect_specialist
 from app.agents.audit_specialist import audit_specialist
 from app.agents.clean_specialist import clean_specialist
