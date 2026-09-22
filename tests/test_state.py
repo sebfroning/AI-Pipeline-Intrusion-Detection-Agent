@@ -50,6 +50,31 @@ class OversightStateTests(unittest.TestCase):
         self.assertIn("Access mode: black_box", captured[0])
         self.assertIn("Available interfaces: none declared", captured[0])
 
+    def test_middleware_adds_recalled_episodes_to_system_prompt(self) -> None:
+        request = ModelRequest(
+            model=model,
+            messages=[],
+            system_prompt="You are a specialist.",
+            state={
+                "messages": [],
+                "oversight": {
+                    "target_name": "classifier",
+                    "target_kind": "model",
+                    "access_mode": "white_box",
+                },
+                "episodic_context": "<relevant_episodes>prior run</relevant_episodes>",
+            },
+        )
+        captured = []
+
+        def handler(updated_request: ModelRequest) -> AIMessage:
+            captured.append(updated_request.system_prompt)
+            return AIMessage(content="done")
+
+        include_oversight_metadata.wrap_model_call(request, handler)
+
+        self.assertIn("<relevant_episodes>prior run</relevant_episodes>", captured[0])
+
 
 if __name__ == "__main__":
     unittest.main()

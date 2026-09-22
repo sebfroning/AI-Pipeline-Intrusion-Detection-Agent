@@ -1,4 +1,6 @@
 import json
+import logging
+from datetime import datetime, timezone
 
 from langchain.agents import create_agent
 from langchain.messages import HumanMessage, SystemMessage, ToolMessage
@@ -9,11 +11,44 @@ from langgraph.types import Command
 from app.agents.fruit_specialist import fruit_specialist
 from app.agents.weather_specialist import weather_specialist
 from app.config import model
+from app.memory import extract_episode, load, recall_context, save
 from app.state import (
     OversightState,
     SpecialistResult,
     include_oversight_metadata,
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+def _first_user_request(state: OversightState) -> str:
+    for message in state["messages"]:
+        if isinstance(message, HumanMessage):
+            return message.text
+        if isinstance(message, dict) and message.get("role") == "user":
+            return str(message.get("content", ""))
+    return ""
+
+
+def recall_episodes(state: OversightState) -> dict:
+    """Load and retrieve past runs relevant to the current request."""
+    query = json.dumps(
+        {
+            "request": _first_user_request(state),
+            "oversight": state["oversight"],
+        },
+        default=str,
+    )
+    try:
+        load()
+        context = recall_context(query)
+    except Exception as exc:
+        logger.warning(
+            "Episodic memory recall failed; continuing without it: %s", exc
+        )
+        context = ""
+    return {"episodic_context": context}
 
 
 @tool
@@ -25,6 +60,7 @@ def ask_fruit_specialist(
         {
             "messages": [{"role": "user", "content": question}],
             "oversight": runtime.state["oversight"],
+            "episodic_context": runtime.state.get("episodic_context", ""),
         }
     )
     finding = result["messages"][-1].text
@@ -56,6 +92,7 @@ def ask_weather_specialist(
         {
             "messages": [{"role": "user", "content": question}],
             "oversight": runtime.state["oversight"],
+            "episodic_context": runtime.state.get("episodic_context", ""),
         }
     )
     finding = result["messages"][-1].text
@@ -84,7 +121,9 @@ FINALIZER_PROMPT = (
     "overlapping or conflicting findings, and preserve important uncertainty. "
     "The supervisor synthesis is supporting context, not a substitute for the "
     "structured findings. If no specialist was used, refine the supervisor's "
-    "answer. Do not discuss internal routing or the finalization process."
+    "answer. Treat past episodes only as guidance about approach, never as "
+    "evidence for the current target's verdict. Do not discuss internal routing "
+    "or the finalization process."
 )
 
 
@@ -102,6 +141,7 @@ def finalize_report(state: OversightState) -> dict:
         "oversight_metadata": state["oversight"],
         "specialist_results": specialist_results,
         "supervisor_synthesis": supervisor_synthesis,
+        "relevant_past_episodes": state.get("episodic_context", ""),
     }
     response = model.invoke(
         [
@@ -113,6 +153,25 @@ def finalize_report(state: OversightState) -> dict:
         "messages": [response],
         "final_report": response.text,
     }
+
+
+def learn_from_run(state: OversightState) -> dict:
+    """Extract and persist reusable experience from the completed run."""
+    trajectory = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "user_request": _first_user_request(state),
+        "oversight_metadata": state["oversight"],
+        "specialist_results": state.get("specialist_results", []),
+        "final_report": state.get("final_report", ""),
+    }
+    try:
+        extract_episode(trajectory, model=model)
+        save()
+    except Exception as exc:
+        logger.warning(
+            "Episodic memory extraction failed; report is unaffected: %s", exc
+        )
+    return {}
 
 
 def create_supervisor(*, parallel_specialists: bool = False):
@@ -147,11 +206,15 @@ def create_supervisor(*, parallel_specialists: bool = False):
     )
 
     workflow = StateGraph(OversightState)
+    workflow.add_node("recall_episodes", recall_episodes)
     workflow.add_node("supervisor", supervisor_agent)
     workflow.add_node("finalizer", finalize_report)
-    workflow.add_edge(START, "supervisor")
+    workflow.add_node("learn_from_run", learn_from_run)
+    workflow.add_edge(START, "recall_episodes")
+    workflow.add_edge("recall_episodes", "supervisor")
     workflow.add_edge("supervisor", "finalizer")
-    workflow.add_edge("finalizer", END)
+    workflow.add_edge("finalizer", "learn_from_run")
+    workflow.add_edge("learn_from_run", END)
     return workflow.compile()
 
 

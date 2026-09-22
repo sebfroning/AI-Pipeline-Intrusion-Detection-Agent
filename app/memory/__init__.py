@@ -1,13 +1,10 @@
-"""LangMem-backed memory for the agent pipeline."""
+"""Episodic memory for the agent pipeline."""
 
-from app.memory.langmem_store import (
+from app.memory.episodic import (
     EPISODIC_NAMESPACE,
-    EPISODIC_TOOLS,
-    MEMORY_TOOLS,
-    SEMANTIC_NAMESPACE,
-    SEMANTIC_TOOLS,
+    Episode,
+    extract_episode,
     load,
-    recall,
     recall_context,
     save,
     store,
@@ -15,12 +12,9 @@ from app.memory.langmem_store import (
 
 __all__ = [
     "EPISODIC_NAMESPACE",
-    "EPISODIC_TOOLS",
-    "MEMORY_TOOLS",
-    "SEMANTIC_NAMESPACE",
-    "SEMANTIC_TOOLS",
+    "Episode",
+    "extract_episode",
     "load",
-    "recall",
     "recall_context",
     "save",
     "store",

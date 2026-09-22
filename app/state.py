@@ -41,6 +41,7 @@ class OversightState(AgentState):
     specialist_results: NotRequired[
         Annotated[list[SpecialistResult], operator.add]
     ]
+    episodic_context: NotRequired[str]
     final_report: NotRequired[str]
 
 
@@ -63,12 +64,16 @@ def format_oversight_metadata(metadata: OversightMetadata) -> str:
 
 @dynamic_prompt
 def include_oversight_metadata(request: ModelRequest) -> str:
-    """Add the shared oversight context to an agent's own system prompt."""
+    """Add shared oversight and episodic context to an agent's system prompt."""
     base_prompt = request.system_prompt or ""
-    metadata = cast(OversightState, request.state)["oversight"]
-    return (
+    state = cast(OversightState, request.state)
+    metadata = state["oversight"]
+    prompt = (
         base_prompt
         + "\n\nChoose tools that are compatible with the declared access mode and "
         "available interfaces.\n\nOversight metadata:\n"
         + format_oversight_metadata(metadata)
     )
+    if episodic_context := state.get("episodic_context"):
+        prompt += "\n\n" + episodic_context
+    return prompt

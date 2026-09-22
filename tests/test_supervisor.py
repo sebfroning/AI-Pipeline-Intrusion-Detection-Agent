@@ -12,6 +12,8 @@ from app.agents.supervisor import (
     ask_weather_specialist,
     create_supervisor,
     finalize_report,
+    learn_from_run,
+    recall_episodes,
 )
 from app.state import OversightState
 
@@ -138,6 +140,7 @@ class SupervisorTests(unittest.TestCase):
                     "finding": "weather finding",
                 },
             ],
+            "episodic_context": "past run guidance",
         }
 
         update = finalize_report(state)
@@ -147,12 +150,19 @@ class SupervisorTests(unittest.TestCase):
         self.assertIn('"finding": "fruit finding"', finalizer_input)
         self.assertIn('"specialist": "weather"', finalizer_input)
         self.assertIn('"finding": "weather finding"', finalizer_input)
+        self.assertIn("past run guidance", finalizer_input)
         self.assertEqual(update["final_report"], "combined report")
 
     @patch("app.agents.supervisor.model")
     @patch("app.agents.supervisor.create_agent")
+    @patch("app.agents.supervisor.save")
+    @patch("app.agents.supervisor.extract_episode")
     def test_finalizer_always_runs_after_supervisor(
-        self, create: Mock, finalizer_model: Mock
+        self,
+        _extract: Mock,
+        _save: Mock,
+        create: Mock,
+        finalizer_model: Mock,
     ) -> None:
         create.return_value = RunnableLambda(
             lambda _state: {"messages": [AIMessage(content="supervisor answer")]}
@@ -175,9 +185,11 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(result["final_report"], "final report")
         self.assertEqual(result["messages"][-1].text, "final report")
 
+    @patch("app.agents.supervisor.save")
+    @patch("app.agents.supervisor.extract_episode")
     @patch("app.agents.supervisor.fruit_specialist")
     def test_specialist_result_flows_through_supervisor_to_finalizer(
-        self, specialist: Mock
+        self, specialist: Mock, _extract: Mock, _save: Mock
     ) -> None:
         fake_model = ToolCallingFakeModel(
             responses=[
@@ -223,6 +235,59 @@ class SupervisorTests(unittest.TestCase):
             ],
         )
         self.assertEqual(result["final_report"], "combined final report")
+
+    @patch("app.agents.supervisor.recall_context", return_value="past episode")
+    @patch("app.agents.supervisor.load")
+    def test_recall_node_loads_and_retrieves_context(
+        self, load_memory: Mock, recall: Mock
+    ) -> None:
+        state = {
+            "messages": [{"role": "user", "content": "inspect this model"}],
+            "oversight": {
+                "target_name": "classifier",
+                "target_kind": "model",
+                "access_mode": "white_box",
+            },
+        }
+
+        update = recall_episodes(state)
+
+        load_memory.assert_called_once_with()
+        self.assertIn("inspect this model", recall.call_args.args[0])
+        self.assertEqual(update, {"episodic_context": "past episode"})
+
+    @patch("app.agents.supervisor.save")
+    @patch("app.agents.supervisor.extract_episode")
+    def test_learning_node_extracts_and_saves_completed_run(
+        self, extract: Mock, save_memory: Mock
+    ) -> None:
+        state = {
+            "messages": [{"role": "user", "content": "inspect this model"}],
+            "oversight": {
+                "target_name": "classifier",
+                "target_kind": "model",
+                "access_mode": "white_box",
+            },
+            "specialist_results": [
+                {
+                    "specialist": "fruit",
+                    "question": "inspect",
+                    "finding": "finding",
+                }
+            ],
+            "final_report": "completed report",
+        }
+
+        update = learn_from_run(state)
+
+        trajectory = extract.call_args.args[0]
+        self.assertEqual(trajectory["user_request"], "inspect this model")
+        self.assertEqual(trajectory["final_report"], "completed report")
+        self.assertEqual(
+            trajectory["specialist_results"], state["specialist_results"]
+        )
+        save_memory.assert_called_once_with()
+        self.assertEqual(update, {})
 
 
 if __name__ == "__main__":
