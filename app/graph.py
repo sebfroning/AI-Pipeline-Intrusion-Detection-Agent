@@ -1,15 +1,12 @@
 from langgraph.graph import StateGraph, START, END
-from app.state import AgentState, supervisor
-from app.agents.detect_specialist import detect_specialist
-from app.agents.audit_specialist import audit_specialist
-from app.agents.clean_specialist import clean_specialist
-from app.agents.reporter import reporter
+from app.state import AgentState
+from app.nodes import supervisor, detector, auditor, cleaner, reporter
 
 g = StateGraph(AgentState)
 g.add_node("supervisor", supervisor)
-g.add_node("detector", detect_specialist)
-g.add_node("auditor", audit_specialist)
-g.add_node("cleaner", clean_specialist)
+g.add_node("detector", detector)
+g.add_node("auditor", auditor)
+g.add_node("cleaner", cleaner)
 g.add_node("reporter", reporter)
 
 g.add_edge(START, "supervisor")
