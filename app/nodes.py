@@ -29,6 +29,14 @@ def supervisor(state: AgentState) -> Command[Literal["detector", "auditor", "cle
     events = [job["event"] for job in prev_jobs]
     triggers = plan["triggers"]
 
+    """ planned triggers:
+    "triggers": [
+        {"on": "detect.backdoored", "do": "invoke_cleaner"},
+        {"on": "audit.backdoored", "do": "invoke_cleaner"},
+        {"on": "clean.succeeded", "do": "invoke_detector"},
+    ]
+    """
+
     for trigger in triggers:
         if trigger["on"] in events:
             if (
