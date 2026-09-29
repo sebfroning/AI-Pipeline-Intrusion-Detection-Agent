@@ -4,12 +4,14 @@ from pathlib import Path
 
 from langchain_ollama import ChatOllama
 
+from app.environment import REPO_ROOT
+
 
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
 
 model = ChatOllama(model=OLLAMA_MODEL)
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = REPO_ROOT
 _MITHRIDAT_MCP_ROOT = Path(
     os.getenv("MITHRIDAT_MCP_ROOT", str(_REPO_ROOT.parent / "MithridatMCP"))
 )

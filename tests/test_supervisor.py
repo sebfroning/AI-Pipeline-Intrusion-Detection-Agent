@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
 
-from langchain.messages import AIMessage
+from langchain.messages import AIMessage, ToolMessage
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.runnables import RunnableLambda
 
@@ -26,6 +26,11 @@ class ToolCallingFakeModel(FakeMessagesListChatModel):
 
 
 class SupervisorTests(unittest.TestCase):
+    def setUp(self):
+        recall = patch("app.agents.supervisor.recall_context", return_value="")
+        recall.start()
+        self.addCleanup(recall.stop)
+
     @patch("app.agents.supervisor.create_agent")
     def test_sequential_mode_limits_each_response_to_one_call(self, create) -> None:
         create_supervisor(parallel_specialists=False)
@@ -155,12 +160,10 @@ class SupervisorTests(unittest.TestCase):
 
     @patch("app.agents.supervisor.model")
     @patch("app.agents.supervisor.create_agent")
-    @patch("app.agents.supervisor.save")
     @patch("app.agents.supervisor.extract_episode")
     def test_finalizer_always_runs_after_supervisor(
         self,
         _extract: Mock,
-        _save: Mock,
         create: Mock,
         finalizer_model: Mock,
     ) -> None:
@@ -185,11 +188,10 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(result["final_report"], "final report")
         self.assertEqual(result["messages"][-1].text, "final report")
 
-    @patch("app.agents.supervisor.save")
     @patch("app.agents.supervisor.extract_episode")
     @patch("app.agents.supervisor.fruit_specialist")
     def test_specialist_result_flows_through_supervisor_to_finalizer(
-        self, specialist: Mock, _extract: Mock, _save: Mock
+        self, specialist: Mock, _extract: Mock
     ) -> None:
         fake_model = ToolCallingFakeModel(
             responses=[
@@ -237,9 +239,8 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(result["final_report"], "combined final report")
 
     @patch("app.agents.supervisor.recall_context", return_value="past episode")
-    @patch("app.agents.supervisor.load")
-    def test_recall_node_loads_and_retrieves_context(
-        self, load_memory: Mock, recall: Mock
+    def test_recall_node_retrieves_context(
+        self, recall: Mock
     ) -> None:
         state = {
             "messages": [{"role": "user", "content": "inspect this model"}],
@@ -252,14 +253,12 @@ class SupervisorTests(unittest.TestCase):
 
         update = recall_episodes(state)
 
-        load_memory.assert_called_once_with()
         self.assertIn("inspect this model", recall.call_args.args[0])
         self.assertEqual(update, {"episodic_context": "past episode"})
 
-    @patch("app.agents.supervisor.save")
     @patch("app.agents.supervisor.extract_episode")
-    def test_learning_node_extracts_and_saves_completed_run(
-        self, extract: Mock, save_memory: Mock
+    def test_learning_node_extracts_shared_and_specialist_experiences(
+        self, extract: Mock
     ) -> None:
         state = {
             "messages": [{"role": "user", "content": "inspect this model"}],
@@ -280,14 +279,57 @@ class SupervisorTests(unittest.TestCase):
 
         update = learn_from_run(state)
 
-        trajectory = extract.call_args.args[0]
+        trajectory = extract.call_args_list[0].args[0]
         self.assertEqual(trajectory["user_request"], "inspect this model")
         self.assertEqual(trajectory["final_report"], "completed report")
         self.assertEqual(
             trajectory["specialist_results"], state["specialist_results"]
         )
-        save_memory.assert_called_once_with()
+        self.assertEqual(extract.call_count, 2)
+        specialist_call = extract.call_args_list[1]
+        self.assertEqual(specialist_call.kwargs["specialist"], "fruit")
+        self.assertEqual(specialist_call.args[0]["specialist_result"], state["specialist_results"][0])
+        self.assertNotIn("final_report", specialist_call.args[0])
         self.assertEqual(update, {})
+
+    @patch("app.agents.supervisor.recall_context", side_effect=RuntimeError("database offline"))
+    def test_recall_failure_does_not_abort_run(self, _recall):
+        with self.assertLogs("app.agents.supervisor", level="WARNING"):
+            result = recall_episodes({"messages": [], "oversight": {}})
+        self.assertEqual(result, {"episodic_context": ""})
+
+    @patch("app.agents.supervisor.extract_episode", side_effect=[RuntimeError("shared failed"), None, None])
+    def test_shared_failure_does_not_prevent_specialist_learning(self, extract):
+        state = {
+            "messages": [], "oversight": {}, "final_report": "report",
+            "specialist_results": [
+                {"specialist": "fruit", "question": "apples", "finding": "fruit result"},
+                {"specialist": "weather", "question": "rain", "finding": "weather result"},
+            ],
+        }
+        with self.assertLogs("app.agents.supervisor", level="WARNING"):
+            self.assertEqual(learn_from_run(state), {})
+        self.assertEqual(extract.call_count, 3)
+        self.assertEqual(extract.call_args_list[2].kwargs["specialist"], "weather")
+        self.assertEqual(state["final_report"], "report")
+
+    @patch("app.agents.supervisor.recall_context", return_value="fruit history")
+    @patch("app.agents.supervisor.fruit_specialist")
+    def test_specialist_retrieves_focused_memory_and_retains_tool_observations(self, specialist, recall):
+        specialist.invoke.return_value = {"messages": [
+            ToolMessage(content="tool evidence", tool_call_id="lookup", name="fruit_info"),
+            AIMessage(content="finding"),
+        ]}
+        result = ask_fruit_specialist.func(
+            question="inspect apples",
+            runtime=SimpleNamespace(state={"oversight": {}}, tool_call_id="fruit-call"),
+        )
+        self.assertEqual(recall.call_args.kwargs["specialist"], "fruit")
+        self.assertIn("inspect apples", recall.call_args.args[0])
+        self.assertEqual(specialist.invoke.call_args.args[0]["episodic_context"], "fruit history")
+        self.assertEqual(result.update["specialist_results"][0]["tool_observations"], [
+            {"tool": "fruit_info", "content": "tool evidence"}
+        ])
 
 
 if __name__ == "__main__":

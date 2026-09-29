@@ -32,6 +32,7 @@ class SpecialistResult(TypedDict):
     specialist: Required[SpecialistName]
     question: Required[str]
     finding: Required[str]
+    tool_observations: NotRequired[list[dict[str, str | None]]]
 
 
 class OversightState(AgentState):

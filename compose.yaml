@@ -1,0 +1,57 @@
+x-memory-db: &memory-db
+  image: pgvector/pgvector:0.8.6-pg17-bookworm
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+    interval: 5s
+    timeout: 5s
+    retries: 10
+    start_period: 10s
+
+services:
+  db:
+    <<: *memory-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agent_memory}
+      POSTGRES_USER: ${POSTGRES_USER:-agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - memory_data:/var/lib/postgresql/data
+  db-fruit:
+    <<: *memory-db
+    environment:
+      POSTGRES_DB: ${FRUIT_POSTGRES_DB:-fruit_memory}
+      POSTGRES_USER: ${FRUIT_POSTGRES_USER:-fruit_agent}
+      POSTGRES_PASSWORD: ${FRUIT_POSTGRES_PASSWORD:?Set FRUIT_POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${FRUIT_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - fruit_memory_data:/var/lib/postgresql/data
+  db-weather:
+    <<: *memory-db
+    environment:
+      POSTGRES_DB: ${WEATHER_POSTGRES_DB:-weather_memory}
+      POSTGRES_USER: ${WEATHER_POSTGRES_USER:-weather_agent}
+      POSTGRES_PASSWORD: ${WEATHER_POSTGRES_PASSWORD:?Set WEATHER_POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${WEATHER_POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - weather_memory_data:/var/lib/postgresql/data
+  db-mithridat:
+    <<: *memory-db
+    environment:
+      POSTGRES_DB: ${MITHRIDAT_POSTGRES_DB:-mithridat_memory}
+      POSTGRES_USER: ${MITHRIDAT_POSTGRES_USER:-mithridat_agent}
+      POSTGRES_PASSWORD: ${MITHRIDAT_POSTGRES_PASSWORD:?Set MITHRIDAT_POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${MITHRIDAT_POSTGRES_PORT:-5435}:5432"
+    volumes:
+      - mithridat_memory_data:/var/lib/postgresql/data
+
+volumes:
+  memory_data:
+  fruit_memory_data:
+  weather_memory_data:
+  mithridat_memory_data:

@@ -11,7 +11,7 @@ from langgraph.types import Command
 from app.agents.fruit_specialist import fruit_specialist
 from app.agents.weather_specialist import weather_specialist
 from app.config import model
-from app.memory import extract_episode, load, recall_context, save
+from app.memory import extract_episode, recall_context
 from app.state import (
     OversightState,
     SpecialistResult,
@@ -32,7 +32,7 @@ def _first_user_request(state: OversightState) -> str:
 
 
 def recall_episodes(state: OversightState) -> dict:
-    """Load and retrieve past runs relevant to the current request."""
+    """Retrieve shared past runs relevant to the current request."""
     query = json.dumps(
         {
             "request": _first_user_request(state),
@@ -41,7 +41,6 @@ def recall_episodes(state: OversightState) -> dict:
         default=str,
     )
     try:
-        load()
         context = recall_context(query)
     except Exception as exc:
         logger.warning(
@@ -49,6 +48,24 @@ def recall_episodes(state: OversightState) -> dict:
         )
         context = ""
     return {"episodic_context": context}
+
+
+def _specialist_context(name: str, question: str, state: OversightState) -> str:
+    query = json.dumps({"question": question, "oversight": state["oversight"]})
+    try:
+        return recall_context(query, specialist=name)
+    except Exception as exc:
+        logger.warning("%s memory recall failed; continuing without it: %s", name, exc)
+        return ""
+
+
+def _tool_observations(result: dict) -> list[dict]:
+    """Preserve observable tool outputs, without model reasoning messages."""
+    return [
+        {"tool": message.name, "content": message.text}
+        for message in result["messages"]
+        if isinstance(message, ToolMessage)
+    ]
 
 
 @tool
@@ -60,7 +77,7 @@ def ask_fruit_specialist(
         {
             "messages": [{"role": "user", "content": question}],
             "oversight": runtime.state["oversight"],
-            "episodic_context": runtime.state.get("episodic_context", ""),
+            "episodic_context": _specialist_context("fruit", question, runtime.state),
         }
     )
     finding = result["messages"][-1].text
@@ -69,6 +86,8 @@ def ask_fruit_specialist(
         "question": question,
         "finding": finding,
     }
+    if observations := _tool_observations(result):
+        specialist_result["tool_observations"] = observations
     return Command(
         update={
             "messages": [
@@ -92,7 +111,7 @@ def ask_weather_specialist(
         {
             "messages": [{"role": "user", "content": question}],
             "oversight": runtime.state["oversight"],
-            "episodic_context": runtime.state.get("episodic_context", ""),
+            "episodic_context": _specialist_context("weather", question, runtime.state),
         }
     )
     finding = result["messages"][-1].text
@@ -101,6 +120,8 @@ def ask_weather_specialist(
         "question": question,
         "finding": finding,
     }
+    if observations := _tool_observations(result):
+        specialist_result["tool_observations"] = observations
     return Command(
         update={
             "messages": [
@@ -166,11 +187,27 @@ def learn_from_run(state: OversightState) -> dict:
     }
     try:
         extract_episode(trajectory, model=model)
-        save()
     except Exception as exc:
         logger.warning(
             "Episodic memory extraction failed; report is unaffected: %s", exc
         )
+    for finding in state.get("specialist_results", []):
+        try:
+            extract_episode(
+                {
+                    "timestamp": trajectory["timestamp"],
+                    "oversight_metadata": state["oversight"],
+                    "specialist_result": finding,
+                },
+                model=model,
+                specialist=finding["specialist"],
+            )
+        except Exception as exc:
+            logger.warning(
+                "%s memory extraction failed; report is unaffected: %s",
+                finding["specialist"],
+                exc,
+            )
     return {}
 
 
